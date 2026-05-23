@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>ปฏิบัติงานนอกสถานที่ — Mini HR App</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans Thai', system-ui, sans-serif; background: #F0F8F6; padding: 16px; }
+  .header {
+    background: linear-gradient(135deg, #0A5A47, #0F6E56); color: #fff;
+    padding: 20px; border-radius: 16px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 22px; }
+  .header p { opacity: 0.9; font-size: 13px; margin-top: 4px; }
+  .field { background: #fff; padding: 14px; border-radius: 10px; margin-bottom: 10px; }
+  .field label { font-size: 12px; color: #777; display: block; margin-bottom: 6px; }
+  .field input, .field textarea {
+    width: 100%; border: 1px solid #DDD; padding: 10px; border-radius: 6px;
+    font-family: inherit; font-size: 14px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .type-btn {
+    background: #fff; border: 2px solid #C8E0D8; padding: 12px;
+    border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center;
+  }
+  .type-btn.active { background: #0F6E56; color: #fff; border-color: #0F6E56; }
+  .summary {
+    background: #E6F4F0; border: 2px dashed #0F6E56; padding: 14px;
+    border-radius: 10px; margin-bottom: 10px; text-align: center;
+  }
+  .summary .hours { font-size: 32px; font-weight: 900; color: #0F6E56; }
+  .summary .lab { font-size: 12px; color: #777; }
+  .photo-box { background: #fff; padding: 14px; border-radius: 10px; margin-bottom: 10px; }
+  .photo-box label { font-size: 12px; color: #777; display: block; margin-bottom: 8px; }
+  .btn-cam {
+    background: #06C755; color: #fff; border: none; padding: 10px 16px;
+    border-radius: 8px; font-size: 14px; font-weight: 700; width: 100%; cursor: pointer;
+  }
+  .preview { max-width: 240px; margin-top: 10px; border-radius: 8px; display: none; }
+  .btn-submit {
+    background: #0F6E56; color: #fff; border: none; padding: 16px;
+    border-radius: 12px; font-size: 17px; font-weight: 700; width: 100%; margin-top: 8px;
+    cursor: pointer;
+  }
+  .btn-submit:disabled { background: #AAA; cursor: default; }
+  #status { margin-top: 12px; padding: 12px; border-radius: 8px; text-align: center; display: none; }
+  #status.show { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🗺️ ปฏิบัติงานนอกสถานที่</h1>
+  <p>กรอกฟอร์มเพื่อขออนุมัติ</p>
+</div>
+
+<div class="field">
+  <label>วันที่ปฏิบัติงาน *</label>
+  <input type="date" id="workDate">
+</div>
+
+<div class="field">
+  <label>ช่วงเวลา *</label>
+  <div class="row">
+    <input type="time" id="startTime" placeholder="เวลาออก">
+    <input type="time" id="endTimeEst" placeholder="เวลากลับ (คาด)">
+  </div>
+</div>
+
+<div class="summary">
+  <div class="lab">รวม (ประมาณ)</div>
+  <div class="hours" id="totalHours">0.0</div>
+  <div class="lab">ชั่วโมง</div>
+</div>
+
+<div class="field">
+  <label>สถานที่ปลายทาง *</label>
+  <input type="text" id="destination" placeholder="เช่น สำนักงานลูกค้า ABC สาขาบางนา">
+</div>
+
+<div class="field">
+  <label>วัตถุประสงค์ *</label>
+  <textarea id="purpose" rows="3" placeholder="เช่น ประชุมติดตามงาน / ส่งเอกสาร / อบรม"></textarea>
+</div>
+
+<div class="field">
+  <label>พาหนะ *</label>
+  <div class="types">
+    <button class="type-btn" data-transport="own_car">🚗 รถส่วนตัว</button>
+    <button class="type-btn" data-transport="company_car">🚙 รถบริษัท</button>
+    <button class="type-btn" data-transport="taxi">🚕 แท็กซี่</button>
+    <button class="type-btn" data-transport="public">🚌 ขนส่งสาธารณะ</button>
+    <button class="type-btn" data-transport="other" style="grid-column: span 2;">อื่นๆ</button>
+  </div>
+</div>
+
+<div class="field" id="mileageField" style="display:none;">
+  <label>ระยะทาง (กิโลเมตร)</label>
+  <input type="number" id="mileageKm" min="0" step="1" placeholder="ประมาณกี่ กม.">
+</div>
+
+<div class="photo-box">
+  <label>หลักฐาน / เอกสาร (ไม่บังคับ)</label>
+  <button class="btn-cam" id="btnFile">📎 เลือกไฟล์ / ถ่ายรูป</button>
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
+  <img id="preview" class="preview">
+</div>
+
+<button class="btn-submit" id="btnSubmit" disabled>ส่งคำขอ</button>
+<div id="status"></div>
+
+<script>
+  const LIFF_ID = '2010169392-794yPlTs';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+  let userId = null;
+  let transportType = null;
+  let imageBase64 = null;
+
+  (async function init() {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) liff.login();
+    const profile = await liff.getProfile();
+    userId = profile.userId;
+    document.getElementById('workDate').value = new Date().toISOString().substring(0, 10);
+  })();
+
+  // Transport type toggle — show mileage only for car trips
+  document.querySelectorAll('.type-btn[data-transport]').forEach(function(b) {
+    b.onclick = function() {
+      document.querySelectorAll('.type-btn[data-transport]').forEach(function(x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      transportType = b.dataset.transport;
+      const needsMileage = transportType === 'own_car' || transportType === 'company_car';
+      document.getElementById('mileageField').style.display = needsMileage ? 'block' : 'none';
+      if (!needsMileage) document.getElementById('mileageKm').value = '';
+      checkCan();
+    };
+  });
+
+  // Recalculate estimated hours whenever time fields change
+  function recalc() {
+    const s = document.getElementById('startTime').value;
+    const e = document.getElementById('endTimeEst').value;
+    if (!s || !e) { document.getElementById('totalHours').textContent = '0.0'; checkCan(); return; }
+    const [sh, sm] = s.split(':').map(Number);
+    const [eh, em] = e.split(':').map(Number);
+    const diff = (eh * 60 + em) - (sh * 60 + sm);
+    document.getElementById('totalHours').textContent = Math.max(0, diff / 60).toFixed(1);
+    checkCan();
+  }
+
+  function checkCan() {
+    const ok = document.getElementById('workDate').value
+      && document.getElementById('startTime').value
+      && document.getElementById('endTimeEst').value
+      && parseFloat(document.getElementById('totalHours').textContent) > 0
+      && document.getElementById('destination').value.trim()
+      && document.getElementById('purpose').value.trim()
+      && transportType;
+    document.getElementById('btnSubmit').disabled = !ok;
+  }
+
+  document.querySelectorAll('input, textarea').forEach(function(el) {
+    el.oninput = recalc;
+  });
+
+  // Evidence image — optional
+  document.getElementById('btnFile').onclick = function() {
+    document.getElementById('fileInput').click();
+  };
+  document.getElementById('fileInput').onchange = async function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    imageBase64 = await resizeAndEncode(file);
+    document.getElementById('preview').src = 'data:image/jpeg;base64,' + imageBase64;
+    document.getElementById('preview').style.display = 'block';
+  };
+
+  // Resize to max 1280 px wide, encode as JPEG base64 — same as evidence.html
+  async function resizeAndEncode(file) {
+    const img = await new Promise(function(res) {
+      const r = new FileReader();
+      r.onload = function() {
+        const i = new Image();
+        i.onload = function() { res(i); };
+        i.src = r.result;
+      };
+      r.readAsDataURL(file);
+    });
+    const canvas = document.createElement('canvas');
+    const maxW = 1280;
+    const scale = img.width > maxW ? maxW / img.width : 1;
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+  }
+
+  document.getElementById('btnSubmit').onclick = async function() {
+    showStatus('กำลังส่ง...', 'loading');
+    document.getElementById('btnSubmit').disabled = true;
+    const payload = {
+      action: 'outside_work',
+      lineUserId: userId,
+      workDate:     document.getElementById('workDate').value,
+      startTime:    document.getElementById('startTime').value,
+      endTimeEst:   document.getElementById('endTimeEst').value,
+      destination:  document.getElementById('destination').value.trim(),
+      purpose:      document.getElementById('purpose').value.trim(),
+      transportType: transportType,
+      mileageKm:    document.getElementById('mileageKm').value || null,
+      evidenceBase64: imageBase64 || null
+    };
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.ok) {
+        showStatus('✅ ส่งคำขอเรียบร้อย ' + json.owId, 'success');
+        setTimeout(function() { liff.closeWindow(); }, 2500);
+      } else {
+        showStatus('❌ ' + (json.message || json.error), 'error');
+        document.getElementById('btnSubmit').disabled = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnSubmit').disabled = false;
+    }
+  };
+
+  function showStatus(t, l) {
+    const el = document.getElementById('status');
+    el.textContent = t; el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>

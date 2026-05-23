@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>ลงทะเบียน — Mini HR App</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans Thai', system-ui, sans-serif;
+    background: #FFF8F0; padding: 16px; color: #1A1A1A;
+  }
+  .header {
+    background: linear-gradient(135deg, #D4550A, #F28C28);
+    color: #fff; padding: 24px; border-radius: 16px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 22px; }
+  .header p { opacity: 0.9; font-size: 13px; margin-top: 4px; }
+  .field {
+    background: #fff; padding: 14px; border-radius: 10px; margin-bottom: 10px;
+  }
+  .field label { font-size: 12px; color: #777; display: block; margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; border: 1px solid #DDD; padding: 10px; border-radius: 6px;
+    font-size: 15px; font-family: inherit;
+  }
+  .field input:focus { border-color: #D4550A; outline: none; }
+  .photo-box {
+    background: #fff; padding: 16px; border-radius: 10px; margin-bottom: 10px; text-align: center;
+  }
+  .photo-box label { display: block; font-size: 12px; color: #777; margin-bottom: 8px; }
+  .photo-box .btn {
+    background: #06C755; color: #fff; border: none; padding: 12px 20px;
+    border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%;
+  }
+  .photo-box .preview { max-width: 200px; margin-top: 10px; border-radius: 8px; display: none; }
+  .btn-submit {
+    background: #D4550A; color: #fff; border: none; padding: 16px;
+    border-radius: 12px; font-size: 17px; font-weight: 700; width: 100%; margin-top: 12px;
+  }
+  .btn-submit:disabled { background: #AAA; }
+  #status {
+    margin-top: 14px; padding: 12px; border-radius: 8px; text-align: center; display: none;
+  }
+  #status.show { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+  /* LIFF init status bar — always visible, never overwritten by form validation */
+  #liffStatus {
+    background: #fff; border-left: 4px solid #F2A640;
+    padding: 8px 12px; border-radius: 6px; margin-bottom: 10px;
+    font-size: 12px; color: #555; word-break: break-all;
+  }
+  #liffStatus.ok   { border-color: #1F7A1F; color: #1F7A1F; }
+  #liffStatus.fail { border-color: #B23A3A; color: #B23A3A; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📝 ลงทะเบียนพนักงาน</h1>
+  <p>กรอกข้อมูลครั้งเดียวจบ</p>
+</div>
+
+<!-- LIFF init status — separate from form validation, never overwritten by checkCanSubmit -->
+<div id="liffStatus">⏳ กำลังโหลด LIFF…</div>
+
+<div class="field"><label>ชื่อ-นามสกุล *</label><input id="displayName" placeholder="สมชาย ใจดี"></div>
+<div class="field"><label>เบอร์โทร *</label><input id="phone" type="tel" placeholder="0812345678"></div>
+<div class="field"><label>อีเมล</label><input id="email" type="email"></div>
+<div class="field"><label>แผนก</label><input id="department" placeholder="Engineering"></div>
+<div class="field"><label>ตำแหน่ง</label><input id="position" placeholder="Developer"></div>
+
+<div class="field"><label>ธนาคาร *</label>
+  <select id="bankName">
+    <option value="">-- เลือก --</option>
+    <option>ไทยพาณิชย์ (SCB)</option>
+    <option>กสิกรไทย (KBANK)</option>
+    <option>กรุงเทพ (BBL)</option>
+    <option>กรุงไทย (KTB)</option>
+    <option>กรุงศรี (BAY)</option>
+    <option>ทีเอ็มบีธนชาต (TTB)</option>
+  </select>
+</div>
+<div class="field"><label>เลขที่บัญชี *</label><input id="bankAccountNo" placeholder="123-4-56789-0"></div>
+<div class="field"><label>ชื่อบัญชี *</label><input id="bankAccountName"></div>
+
+
+<button class="btn-submit" id="btnSubmit" disabled>ลงทะเบียน</button>
+<div id="debugInfo" style="margin-top:8px;font-size:12px;color:#888;text-align:center;min-height:18px;"></div>
+<div id="status"></div>
+
+<script>
+  const LIFF_ID = '2010169392-794yPlTs';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+
+  let userId = null;
+
+  // ── LIFF status helper — writes to #liffStatus (NEVER to #debugInfo) ──
+  // #debugInfo is owned by checkCanSubmit(); the two must not collide.
+  function liffStatus(msg, state) {
+    // state: 'ok' | 'fail' | '' (pending/yellow)
+    console.log('[LIFF]', msg);
+    var el = document.getElementById('liffStatus');
+    el.textContent = msg;
+    el.className = state || '';
+  }
+
+  // Returns a promise that rejects after `ms` milliseconds with a timeout error
+  function withTimeout(promise, ms) {
+    var timeout = new Promise(function(_, reject) {
+      setTimeout(function() {
+        reject(new Error('TIMEOUT after ' + ms + 'ms — liff.init() never resolved or rejected'));
+      }, ms);
+    });
+    return Promise.race([promise, timeout]);
+  }
+
+  (async function init() {
+    var t0 = Date.now();
+    function elapsed() { return '+' + (Date.now() - t0) + 'ms'; }
+
+    // ── Step 1: SDK present? ────────────────────────────────────────────
+    liffStatus('S1 ' + elapsed() + ' SDK check…');
+    if (typeof liff === 'undefined' || !window.liff) {
+      liffStatus('❌ S1 liff SDK ไม่โหลด — script tag blocked?', 'fail');
+      return;
+    }
+    liffStatus('S1 ' + elapsed() + ' SDK OK | ver=' + (liff.getVersion ? liff.getVersion() : 'n/a'));
+
+    // ── Step 2: LIFF_ID guard ──────────────────────────────────────────
+    var liffId = LIFF_ID;
+    if (!liffId || liffId === 'null' || liffId.trim() === '') {
+      liffStatus('❌ S2 LIFF_ID ว่าง — ตรวจ Script Properties: LIFF_ID_REGISTER', 'fail');
+      return;
+    }
+
+    // ── Step 3: Dump environment before init ──────────────────────────
+    var ua  = navigator.userAgent || '(no UA)';
+    var url = window.location.href || '(no URL)';
+    // Show first 120 chars of URL so LIFF redirect params are visible
+    liffStatus('S3 ' + elapsed() + ' UA=' + ua.slice(0, 80));
+    await new Promise(function(r) { setTimeout(r, 50); }); // flush paint
+    liffStatus('S3b URL=' + url.slice(0, 120));
+    await new Promise(function(r) { setTimeout(r, 50); });
+
+    // ── Step 4: liff.init() with 8-second timeout ─────────────────────
+    liffStatus('S4 ' + elapsed() + ' calling liff.init({ liffId: ' + liffId + ' })…');
+    try {
+      await withTimeout(liff.init({ liffId: liffId }), 8000);
+    } catch (initErr) {
+      liffStatus(
+        '❌ S4 ' + elapsed() + ' liff.init() FAILED\n' +
+        'msg: ' + initErr.message + '\n' +
+        'stack: ' + (initErr.stack || 'n/a'),
+        'fail'
+      );
+      return;
+    }
+
+    // ── Step 5: Post-init state dump ───────────────────────────────────
+    var inClient = liff.isInClient();
+    var loggedIn  = liff.isLoggedIn();
+    var os        = liff.getOS ? liff.getOS() : 'n/a';
+    liffStatus('S5 ' + elapsed() + ' init RESOLVED | inClient=' + inClient + ' | loggedIn=' + loggedIn + ' | os=' + os);
+
+    // ── Step 6: Login redirect if needed ──────────────────────────────
+    if (!loggedIn) {
+      liffStatus('S6 ' + elapsed() + ' 🔐 not logged in → liff.login()…', 'fail');
+      liff.login();
+      return; // page reloads after login
+    }
+
+    // ── Step 7: liff.getProfile() ─────────────────────────────────────
+    liffStatus('S7 ' + elapsed() + ' calling getProfile()…');
+    var profile;
+    try {
+      profile = await withTimeout(liff.getProfile(), 8000);
+    } catch (profileErr) {
+      liffStatus(
+        '❌ S7 ' + elapsed() + ' getProfile() FAILED\n' +
+        'msg: ' + profileErr.message + '\n' +
+        'stack: ' + (profileErr.stack || 'n/a'),
+        'fail'
+      );
+      return;
+    }
+
+    if (!profile || !profile.userId) {
+      liffStatus('❌ S7 ' + elapsed() + ' getProfile() คืนค่า userId ว่าง | profile=' + JSON.stringify(profile), 'fail');
+      return;
+    }
+
+    // ── Step 8: Success ────────────────────────────────────────────────
+    userId = profile.userId;
+    liffStatus('✅ S8 ' + elapsed() + ' userId=' + userId.slice(0, 8) + '… | name=' + (profile.displayName || '(none)'), 'ok');
+    document.getElementById('displayName').value = profile.displayName || '';
+    checkCanSubmit();
+  })();
+
+  function checkCanSubmit() {
+    // --- Explicit per-condition flags (no hidden logic) ---
+    var hasUserId          = !!userId;
+    var hasDisplayName     = !!document.getElementById('displayName').value.trim();
+    var hasPhone           = !!document.getElementById('phone').value.trim();
+    var hasBankName        = !!document.getElementById('bankName').value.trim();
+    var hasBankAccountNo   = !!document.getElementById('bankAccountNo').value.trim();
+    var hasBankAccountName = !!document.getElementById('bankAccountName').value.trim();
+
+    console.log('[checkCanSubmit]', {
+      hasUserId:          hasUserId,
+      hasDisplayName:     hasDisplayName,
+      hasPhone:           hasPhone,
+      hasBankName:        hasBankName,
+      hasBankAccountNo:   hasBankAccountNo,
+      hasBankAccountName: hasBankAccountName
+    });
+
+    var allOk = hasUserId && hasDisplayName && hasPhone
+             && hasBankName && hasBankAccountNo && hasBankAccountName;
+
+    document.getElementById('btnSubmit').disabled = !allOk;
+
+    // On-screen debug — lists every condition that is still false
+    var failing = [];
+    if (!hasUserId)          failing.push('userId (LIFF not ready)');
+    if (!hasDisplayName)     failing.push('displayName');
+    if (!hasPhone)           failing.push('phone');
+    if (!hasBankName)        failing.push('bankName');
+    if (!hasBankAccountNo)   failing.push('bankAccountNo');
+    if (!hasBankAccountName) failing.push('bankAccountName');
+
+    document.getElementById('debugInfo').textContent = allOk
+      ? '✅ พร้อมส่ง'
+      : '⛔ ยังขาด: ' + failing.join(', ');
+  }
+  document.querySelectorAll('input,select').forEach(function(el) { el.oninput = checkCanSubmit; });
+
+  document.getElementById('btnSubmit').onclick = async function() {
+    showStatus('กำลังส่ง...', 'loading');
+    document.getElementById('btnSubmit').disabled = true;
+
+    const payload = {
+      action: 'register',
+      lineUserId: userId,
+      displayName: document.getElementById('displayName').value.trim(),
+      phone: document.getElementById('phone').value.trim(),
+      email: document.getElementById('email').value.trim(),
+      department: document.getElementById('department').value.trim(),
+      position: document.getElementById('position').value.trim(),
+      bankName: document.getElementById('bankName').value,
+      bankAccountNo: document.getElementById('bankAccountNo').value.trim(),
+      bankAccountName: document.getElementById('bankAccountName').value.trim(),
+      selfieBase64: '',
+      idCardBase64: ''
+    };
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.ok) {
+        showStatus('✅ ลงทะเบียนเรียบร้อย รหัส: ' + json.employeeId, 'success');
+        setTimeout(function() { liff.closeWindow(); }, 2500);
+      } else if (json.error === 'already_registered') {
+        showStatus('⚠️ คุณลงทะเบียนแล้ว (' + json.employeeId + ')', 'error');
+      } else {
+        showStatus('❌ ' + (json.message || json.error), 'error');
+        document.getElementById('btnSubmit').disabled = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnSubmit').disabled = false;
+    }
+  };
+
+  function showStatus(t, l) {
+    const el = document.getElementById('status');
+    el.textContent = t; el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>
