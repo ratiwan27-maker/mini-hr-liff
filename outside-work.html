@@ -85,6 +85,16 @@
 </div>
 
 <div class="field">
+  <label>Code (ชื่อลูกค้า) *</label>
+  <input type="text" id="customerCode" placeholder="เช่น ABC001 / Toyota / SCG">
+</div>
+
+<div class="field">
+  <label>Case (ลำดับงานลูกค้า) *</label>
+  <input type="text" id="customerCase" placeholder="เช่น ตรวจหน้างาน / ติดตั้ง / PM / Audit">
+</div>
+
+<div class="field">
   <label>วัตถุประสงค์ *</label>
   <textarea id="purpose" rows="3" placeholder="เช่น ประชุมติดตามงาน / ส่งเอกสาร / อบรม"></textarea>
 </div>
@@ -98,6 +108,11 @@
     <button class="type-btn" data-transport="public">🚌 ขนส่งสาธารณะ</button>
     <button class="type-btn" data-transport="other" style="grid-column: span 2;">อื่นๆ</button>
   </div>
+</div>
+
+<div class="field" id="otherDetailField" style="display:none;">
+  <label>รายละเอียดพาหนะ *</label>
+  <textarea id="transportOtherDetail" rows="2" placeholder="กรุณาระบุรายละเอียด"></textarea>
 </div>
 
 <div class="field" id="mileageField" style="display:none;">
@@ -130,7 +145,7 @@
     document.getElementById('workDate').value = new Date().toISOString().substring(0, 10);
   })();
 
-  // Transport type toggle — show mileage only for car trips
+  // Transport type toggle — show mileage for car trips, detail for อื่นๆ
   document.querySelectorAll('.type-btn[data-transport]').forEach(function(b) {
     b.onclick = function() {
       document.querySelectorAll('.type-btn[data-transport]').forEach(function(x) { x.classList.remove('active'); });
@@ -139,6 +154,9 @@
       const needsMileage = transportType === 'own_car' || transportType === 'company_car';
       document.getElementById('mileageField').style.display = needsMileage ? 'block' : 'none';
       if (!needsMileage) document.getElementById('mileageKm').value = '';
+      const needsOtherDetail = transportType === 'other';
+      document.getElementById('otherDetailField').style.display = needsOtherDetail ? 'block' : 'none';
+      if (!needsOtherDetail) document.getElementById('transportOtherDetail').value = '';
       checkCan();
     };
   });
@@ -156,13 +174,17 @@
   }
 
   function checkCan() {
+    const otherOk = transportType !== 'other' || document.getElementById('transportOtherDetail').value.trim();
     const ok = document.getElementById('workDate').value
       && document.getElementById('startTime').value
       && document.getElementById('endTimeEst').value
       && parseFloat(document.getElementById('totalHours').textContent) > 0
       && document.getElementById('destination').value.trim()
+      && document.getElementById('customerCode').value.trim()
+      && document.getElementById('customerCase').value.trim()
       && document.getElementById('purpose').value.trim()
-      && transportType;
+      && transportType
+      && otherOk;
     document.getElementById('btnSubmit').disabled = !ok;
   }
 
@@ -212,8 +234,12 @@
       startTime:    document.getElementById('startTime').value,
       endTimeEst:   document.getElementById('endTimeEst').value,
       destination:  document.getElementById('destination').value.trim(),
+      customerCode: document.getElementById('customerCode').value.trim(),
+      customerCase: document.getElementById('customerCase').value.trim(),
       purpose:      document.getElementById('purpose').value.trim(),
       transportType: transportType,
+      transportOtherDetail: transportType === 'other'
+        ? document.getElementById('transportOtherDetail').value.trim() : null,
       mileageKm:    document.getElementById('mileageKm').value || null,
       evidenceBase64: imageBase64 || null
     };
