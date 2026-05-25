@@ -167,15 +167,11 @@
   let transportType = null;
 
   // ============================================================
-  // Init — extract owId, authenticate, load data
+  // Init — authenticate first, then extract owId
   // ============================================================
+  // owId must be read AFTER liff.init() because LIFF rewrites
+  // window.location during init to unpack liff.state params.
   (async function init() {
-    owId = new URLSearchParams(window.location.search).get('owId');
-    if (!owId) {
-      showError('ไม่พบรหัสคำขอ กรุณาเข้าผ่านลิงก์ที่ถูกต้อง');
-      return;
-    }
-
     try {
       await liff.init({ liffId: LIFF_ID });
       if (!liff.isLoggedIn()) liff.login();
@@ -183,6 +179,23 @@
       userId = profile.userId;
     } catch (err) {
       showError('LIFF init failed: ' + err.message);
+      return;
+    }
+
+    // Read owId after init — LIFF unpacks query params from liff.state
+    const params = new URLSearchParams(window.location.search);
+    owId = params.get('owId');
+
+    // Fallback: if still not found, try parsing liff.state manually
+    if (!owId) {
+      const liffState = params.get('liff.state');
+      if (liffState) {
+        owId = new URLSearchParams(liffState).get('owId');
+      }
+    }
+
+    if (!owId) {
+      showError('ไม่พบรหัสคำขอ กรุณาเข้าผ่านลิงก์ที่ถูกต้อง');
       return;
     }
 
