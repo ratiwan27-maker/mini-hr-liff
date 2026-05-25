@@ -70,25 +70,50 @@
 <div id="status"></div>
 
 <script>
-  const LIFF_ID = '2010169392-JcsAbXXc';
+  const LIFF_ID = '2010169392-794yPlTs';
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
   let userId = null;
   let imageBase64 = null;
-
-  // Parse query params
-  const params = new URLSearchParams(window.location.search);
-  const recordId = params.get('id');
-  const recordType = params.get('type') || 'leave';
-
-  document.getElementById('recId').textContent = recordId || '-';
-  var typeLabel = recordType === 'leave' ? 'ใบลา' : (recordType === 'outside_work' ? 'ปฏิบัติงานนอกสถานที่' : 'OT');
-  document.getElementById('recType').textContent = typeLabel;
+  let recordId = null;
+  let recordType = 'leave';
 
   (async function init() {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) liff.login();
-    const profile = await liff.getProfile();
-    userId = profile.userId;
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) liff.login();
+      const profile = await liff.getProfile();
+      userId = profile.userId;
+    } catch (err) {
+      document.getElementById('status').textContent = '⚠️ LIFF init failed: ' + err.message;
+      document.getElementById('status').className = 'show error';
+      return;
+    }
+
+    // Read params AFTER liff.init() — handles both direct GitHub Pages URL
+    // (params in window.location.search) and liff.line.me redirect (params in liff.state).
+    const params = new URLSearchParams(window.location.search);
+    recordId   = params.get('id');
+    recordType = params.get('type') || 'leave';
+
+    // liff.state fallback (in case link is opened via liff.line.me/LIFF_ID?...)
+    if (!recordId) {
+      const liffState = params.get('liff.state');
+      if (liffState) {
+        const sp = new URLSearchParams(liffState);
+        recordId   = sp.get('id');
+        recordType = sp.get('type') || 'leave';
+      }
+    }
+
+    if (!recordId) {
+      document.getElementById('status').textContent = '⚠️ ไม่พบรหัสคำขอ กรุณาเข้าผ่านลิงก์ที่ถูกต้อง';
+      document.getElementById('status').className = 'show error';
+      return;
+    }
+
+    document.getElementById('recId').textContent = recordId;
+    var typeLabel = recordType === 'leave' ? 'ใบลา' : (recordType === 'ot' ? 'OT' : 'ปฏิบัติงานนอกสถานที่');
+    document.getElementById('recType').textContent = typeLabel;
   })();
 
   document.getElementById('btnFile').onclick = function() {
