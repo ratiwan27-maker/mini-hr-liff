@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>อนุมัติแก้ไขโปรไฟล์ — Mini HR App (Admin)</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans Thai', system-ui, sans-serif;
+    background: #F5F5F5; padding: 16px;
+    min-height: 100vh;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #7B5EA7, #9B7EC8);
+    color: #fff; padding: 20px 16px; border-radius: 16px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 20px; font-weight: 800; }
+  .header p  { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+
+  /* info card */
+  .info-card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .info-card .row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 6px 0; font-size: 14px; border-bottom: 1px solid #F0F0F0;
+  }
+  .info-card .row:last-child { border-bottom: none; }
+  .info-card .row .k { color: #888; flex: 0 0 100px; }
+  .info-card .row .v { color: #1A1A1A; flex: 1; text-align: right; word-break: break-all; }
+
+  /* diff table */
+  .diff-card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .diff-card h3 { font-size: 13px; color: #555; margin-bottom: 10px; }
+  .diff-row {
+    display: grid; grid-template-columns: 90px 1fr 1fr;
+    gap: 4px; padding: 6px 0; font-size: 13px;
+    border-bottom: 1px solid #F5F5F5;
+    align-items: start;
+  }
+  .diff-row:last-child { border-bottom: none; }
+  .diff-row .lbl { color: #888; }
+  .diff-row .old { color: #B23A3A; text-decoration: line-through; word-break: break-all; }
+  .diff-row .new { color: #1F7A1F; font-weight: 600; word-break: break-all; }
+  .diff-row .same { color: #AAA; font-style: italic; }
+
+  /* review note */
+  .note-card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .note-card label { font-size: 12px; color: #888; display: block; margin-bottom: 6px; }
+  .note-card textarea {
+    width: 100%; border: 1.5px solid #DDD; padding: 10px 12px;
+    border-radius: 8px; font-size: 14px; font-family: inherit;
+    resize: vertical; min-height: 68px;
+  }
+  .note-card textarea:focus { border-color: #7B5EA7; outline: none; }
+
+  /* buttons */
+  .btn {
+    width: 100%; padding: 15px; border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+    font-family: inherit; margin-bottom: 8px;
+  }
+  .btn-approve { background: #1F7A1F; color: #fff; }
+  .btn-reject  { background: #B23A3A; color: #fff; }
+  .btn-close   { background: #EEE; color: #555; }
+  .btn:disabled { background: #CCC; color: #888; cursor: default; }
+
+  /* status */
+  #status {
+    margin-top: 14px; padding: 14px; border-radius: 10px;
+    font-size: 14px; text-align: center; display: none;
+  }
+  #status.show    { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error   { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+
+  /* already-reviewed state */
+  .reviewed-badge {
+    display: inline-block; padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 700; margin-top: 4px;
+  }
+  .badge-approved { background: #D4EDDA; color: #1F7A1F; }
+  .badge-rejected { background: #F8D7DA; color: #B23A3A; }
+  .badge-pending  { background: #FFF3CD; color: #856404; }
+
+  #loadingMsg { color: #777; margin-top: 40px; text-align: center; }
+  .error-box {
+    background: #FFF0F0; border: 2px solid #B23A3A;
+    border-radius: 10px; padding: 16px; color: #B23A3A;
+    font-weight: 600; text-align: center; display: none; margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingMsg">⏳ กำลังโหลด...</div>
+<div class="error-box" id="errorBox"></div>
+
+<div id="mainContent" style="display:none">
+  <div class="header">
+    <h1>🔍 พิจารณาแก้ไขโปรไฟล์</h1>
+    <p>ตรวจสอบคำขอก่อนอนุมัติหรือปฏิเสธ</p>
+  </div>
+
+  <!-- Request meta -->
+  <div class="info-card">
+    <div class="row"><span class="k">รหัสคำขอ</span><span class="v" id="reqId">-</span></div>
+    <div class="row"><span class="k">พนักงาน</span><span class="v" id="reqEmp">-</span></div>
+    <div class="row"><span class="k">รหัส</span><span class="v" id="reqEmpId">-</span></div>
+    <div class="row"><span class="k">ยื่นเมื่อ</span><span class="v" id="reqAt">-</span></div>
+    <div class="row"><span class="k">เหตุผล</span><span class="v" id="reqReason">-</span></div>
+    <div class="row"><span class="k">สถานะ</span><span class="v" id="reqStatus">-</span></div>
+  </div>
+
+  <!-- Diff -->
+  <div class="diff-card">
+    <h3>📋 รายการที่ขอแก้ไข (เดิม → ใหม่)</h3>
+    <div id="diffRows"></div>
+  </div>
+
+  <!-- Note + action buttons (hidden if already reviewed) -->
+  <div id="actionSection">
+    <div class="note-card">
+      <label>หมายเหตุ Admin (required เมื่อปฏิเสธ)</label>
+      <textarea id="reviewNote" placeholder="ระบุเหตุผลถ้าปฏิเสธ หรือหมายเหตุเพิ่มเติม"></textarea>
+    </div>
+    <button class="btn btn-approve" id="btnApprove">✅ อนุมัติ</button>
+    <button class="btn btn-reject"  id="btnReject">❌ ปฏิเสธ</button>
+  </div>
+
+  <button class="btn btn-close" id="btnClose">ปิด</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  // ============================================================
+  // Mini HR App — Admin Review Profile LIFF page
+  // ============================================================
+  // TODO: replace LIFF_ID after creating LIFF app in LINE Dev Console.
+  const LIFF_ID = '2010169392-05OPpYkb';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+
+  const FIELD_LABELS = {
+    display_name:     'ชื่อแสดง',
+    phone:            'เบอร์โทร',
+    email:            'อีเมล',
+    department:       'แผนก',
+    position:         'ตำแหน่ง',
+    bank_name:        'ธนาคาร',
+    bank_account_no:  'เลขบัญชี',
+    bank_account_name:'ชื่อบัญชี'
+  };
+
+  let userId = null;
+  let requestId = null;
+  let currentStatus = null;
+
+  // ──────────────────────────────────────────────────────────
+  // Init
+  // ──────────────────────────────────────────────────────────
+  (async function init() {
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) liff.login();
+      const profile = await liff.getProfile();
+      userId = profile.userId;
+    } catch (err) {
+      showError('LIFF init failed: ' + err.message);
+      return;
+    }
+
+    // Read requestId after init (handles direct URL and liff.state)
+    const params = new URLSearchParams(window.location.search);
+    requestId = params.get('requestId');
+    if (!requestId) {
+      const liffState = params.get('liff.state');
+      if (liffState) requestId = new URLSearchParams(liffState).get('requestId');
+    }
+    if (!requestId) {
+      showError('ไม่พบรหัสคำขอ กรุณาเปิดผ่านลิงก์ในการแจ้งเตือน LINE');
+      return;
+    }
+
+    await loadRequest();
+  })();
+
+  // ──────────────────────────────────────────────────────────
+  // Load request data
+  // ──────────────────────────────────────────────────────────
+  async function loadRequest() {
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:     'get_change_request',
+          lineUserId: userId,
+          requestId:  requestId
+        })
+      });
+      const json = await res.json();
+
+      if (!json.ok) {
+        showError('โหลดข้อมูลไม่สำเร็จ: ' + (json.error || json.message || 'unknown'));
+        return;
+      }
+
+      renderRequest(json.request);
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+
+    } catch (err) {
+      showError('เชื่อมต่อไม่สำเร็จ: ' + err.message);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Render request details
+  // ──────────────────────────────────────────────────────────
+  function renderRequest(req) {
+    currentStatus = req.status;
+
+    document.getElementById('reqId').textContent  = req.request_id;
+    document.getElementById('reqEmp').textContent  = req.display_name;
+    document.getElementById('reqEmpId').textContent = req.employee_id;
+    document.getElementById('reqAt').textContent   = req.requested_at;
+    document.getElementById('reqReason').textContent = req.reason;
+
+    // Status badge
+    var badgeCls = req.status === 'approved' ? 'badge-approved' :
+                   req.status === 'rejected' ? 'badge-rejected' : 'badge-pending';
+    var statusText = req.status === 'approved' ? 'อนุมัติแล้ว' :
+                     req.status === 'rejected' ? 'ปฏิเสธแล้ว' : 'รอพิจารณา';
+    document.getElementById('reqStatus').innerHTML =
+      '<span class="reviewed-badge ' + badgeCls + '">' + statusText + '</span>' +
+      (req.review_note ? '<br><small style="color:#777">หมายเหตุ: ' + req.review_note + '</small>' : '');
+
+    // Diff rows
+    var oldVals = {}, newVals = {};
+    try { oldVals = JSON.parse(req.old_values); } catch(e) {}
+    try { newVals = JSON.parse(req.new_values); } catch(e) {}
+
+    var allFields = Object.keys(FIELD_LABELS);
+    var diffHtml = '';
+    allFields.forEach(function(f) {
+      var old = oldVals[f] !== undefined ? String(oldVals[f]) : '';
+      var nw  = newVals[f] !== undefined ? String(newVals[f]) : '';
+      if (!old && !nw) return; // skip empty fields not in either snapshot
+      var lbl = FIELD_LABELS[f] || f;
+      if (nw && nw !== old) {
+        diffHtml += '<div class="diff-row">' +
+          '<span class="lbl">' + lbl + '</span>' +
+          '<span class="old">' + (old || '-') + '</span>' +
+          '<span class="new">' + nw + '</span>' +
+          '</div>';
+      }
+      // unchanged fields not shown (keep diff focused)
+    });
+
+    if (!diffHtml) {
+      diffHtml = '<div style="color:#AAA;font-size:13px;padding:8px 0;">ไม่พบรายการที่เปลี่ยนแปลง</div>';
+    }
+    document.getElementById('diffRows').innerHTML = diffHtml;
+
+    // Hide action buttons if already reviewed
+    if (req.status !== 'pending') {
+      document.getElementById('actionSection').style.display = 'none';
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Approve
+  // ──────────────────────────────────────────────────────────
+  document.getElementById('btnApprove').onclick = function() {
+    sendDecision('approve');
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // Reject
+  // ──────────────────────────────────────────────────────────
+  document.getElementById('btnReject').onclick = function() {
+    var note = document.getElementById('reviewNote').value.trim();
+    if (!note) {
+      showStatus('⚠️ กรุณาระบุเหตุผลที่ปฏิเสธ', 'error');
+      document.getElementById('reviewNote').focus();
+      return;
+    }
+    sendDecision('reject');
+  };
+
+  async function sendDecision(decision) {
+    var reviewNote = document.getElementById('reviewNote').value.trim();
+    showStatus('กำลังดำเนินการ...', 'loading');
+    document.getElementById('btnApprove').disabled = true;
+    document.getElementById('btnReject').disabled  = true;
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:     'review_profile_change',
+          lineUserId: userId,
+          requestId:  requestId,
+          decision:   decision,
+          reviewNote: reviewNote
+        })
+      });
+      const json = await res.json();
+
+      if (json.ok) {
+        var msg = decision === 'approve'
+          ? '✅ อนุมัติเรียบร้อย — ข้อมูลพนักงานอัปเดตแล้ว'
+          : '❌ ปฏิเสธเรียบร้อย — แจ้งพนักงานแล้ว';
+        showStatus(msg, 'success');
+        document.getElementById('actionSection').style.display = 'none';
+        setTimeout(function() { liff.closeWindow(); }, 2000);
+      } else {
+        showStatus('❌ ' + (json.message || json.error || 'เกิดข้อผิดพลาด'), 'error');
+        document.getElementById('btnApprove').disabled = false;
+        document.getElementById('btnReject').disabled  = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnApprove').disabled = false;
+      document.getElementById('btnReject').disabled  = false;
+    }
+  }
+
+  document.getElementById('btnClose').onclick = function() {
+    liff.closeWindow();
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────
+  function showError(msg) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'none';
+    var box = document.getElementById('errorBox');
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+  }
+
+  function showStatus(t, l) {
+    var el = document.getElementById('status');
+    el.textContent = t; el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>
