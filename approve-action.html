@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>ยืนยันการอนุมัติ — Mini HR App</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans Thai', system-ui, sans-serif;
+    background: #F5F5F5; padding: 24px 16px;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh;
+  }
+
+  .card {
+    background: #fff; border-radius: 16px; padding: 28px 20px;
+    width: 100%; max-width: 360px; text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  .icon { font-size: 48px; margin-bottom: 12px; }
+  .action-label {
+    font-size: 22px; font-weight: 800; margin-bottom: 6px;
+  }
+  .record-id {
+    font-size: 13px; color: #777; margin-bottom: 20px;
+    background: #F0F0F0; padding: 6px 12px; border-radius: 8px;
+    display: inline-block;
+  }
+  .type-label { font-size: 14px; color: #555; margin-bottom: 24px; }
+
+  /* Action-specific accent colours */
+  .accent-approve  { color: #1F7A1F; }
+  .accent-reject   { color: #B23A3A; }
+  .accent-need_info { color: #B27000; }
+
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 10px;
+    font-family: inherit;
+  }
+  .btn-confirm-approve  { background: #1F7A1F; color: #fff; }
+  .btn-confirm-reject   { background: #B23A3A; color: #fff; }
+  .btn-confirm-need_info { background: #F2A640; color: #fff; }
+  .btn-cancel { background: #EEE; color: #555; }
+  .btn:disabled { background: #CCC; color: #888; cursor: default; }
+
+  #status {
+    margin-top: 16px; padding: 14px; border-radius: 10px;
+    font-size: 14px; text-align: center; display: none; width: 100%; max-width: 360px;
+  }
+  #status.show    { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error   { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+
+  .error-box {
+    background: #FFF0F0; border: 2px solid #B23A3A; padding: 16px;
+    border-radius: 10px; color: #B23A3A; font-weight: 600;
+    text-align: center; display: none;
+    width: 100%; max-width: 360px; margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card" id="confirmCard" style="display:none">
+  <div class="icon" id="actionIcon"></div>
+  <div class="action-label" id="actionLabel"></div>
+  <div class="record-id" id="recordId"></div>
+  <div class="type-label" id="typeLabel"></div>
+  <button class="btn" id="btnConfirm">ยืนยัน</button>
+  <button class="btn btn-cancel" id="btnCancel">ยกเลิก</button>
+</div>
+
+<div id="loadingMsg" style="color:#777; margin-top:40px">⏳ กำลังโหลด...</div>
+<div class="error-box" id="errorBox"></div>
+<div id="status"></div>
+
+<script>
+  // ============================================================
+  // Mini HR App — Approve-action LIFF page
+  // ============================================================
+  // Replaces LINE postback buttons so approvals go through LIFF
+  // fetch() instead of the webhook. This eliminates the ~1-second
+  // webhook timeout that caused "System error" dialogs in LINE.
+  // ============================================================
+
+  // TODO: create a new LIFF app in LINE Developer Console,
+  //       set endpoint = https://<github-pages>/approve-action.html,
+  //       then replace the placeholder below.
+  const LIFF_ID = '2010169392-p14HXpQQ';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+
+  let userId   = null;
+  let decision = null;   // approve | reject | need_info
+  let recordId = null;
+  let level    = null;
+  let type     = null;
+
+  const LABELS = {
+    approve:   { icon: '✅', text: 'อนุมัติ',       cls: 'accent-approve',   btnCls: 'btn-confirm-approve' },
+    reject:    { icon: '❌', text: 'ปฏิเสธ',        cls: 'accent-reject',    btnCls: 'btn-confirm-reject' },
+    need_info: { icon: 'ℹ️', text: 'ขอข้อมูลเพิ่ม', cls: 'accent-need_info', btnCls: 'btn-confirm-need_info' }
+  };
+
+  const TYPE_LABELS = {
+    leave: 'ใบลา', outside_work: 'ปฏิบัติงานนอกสถานที่', ot: 'โอที'
+  };
+
+  // ============================================================
+  // Init
+  // ============================================================
+  (async function init() {
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) liff.login();
+      const profile = await liff.getProfile();
+      userId = profile.userId;
+    } catch (err) {
+      showError('LIFF init failed: ' + err.message);
+      return;
+    }
+
+    // Read params after init (LIFF unpacks liff.state during init)
+    const params  = new URLSearchParams(window.location.search);
+    decision = params.get('decision');
+
+    // liff.state fallback
+    if (!decision) {
+      const liffState = params.get('liff.state');
+      if (liffState) {
+        const sp = new URLSearchParams(liffState);
+        decision = sp.get('decision');
+        recordId = sp.get('id');
+        level    = sp.get('level');
+        type     = sp.get('type');
+      }
+    } else {
+      recordId = params.get('id');
+      level    = params.get('level');
+      type     = params.get('type');
+    }
+
+    if (!decision || !recordId || !level || !type) {
+      showError('ลิงก์ไม่ถูกต้อง กรุณาเข้าผ่านปุ่มในการ์ดอนุมัติ');
+      return;
+    }
+
+    renderConfirm();
+  })();
+
+  // ============================================================
+  // Render confirmation card
+  // ============================================================
+  function renderConfirm() {
+    const meta = LABELS[decision];
+    if (!meta) { showError('คำสั่งไม่รู้จัก: ' + decision); return; }
+
+    document.getElementById('actionIcon').textContent  = meta.icon;
+    document.getElementById('actionLabel').textContent = meta.text;
+    document.getElementById('actionLabel').className   = 'action-label ' + meta.cls;
+    document.getElementById('recordId').textContent    = recordId;
+    document.getElementById('typeLabel').textContent   = (TYPE_LABELS[type] || type) + ' — ขั้น ' + level;
+
+    const btn = document.getElementById('btnConfirm');
+    btn.textContent = 'ยืนยัน' + meta.text;
+    btn.className   = 'btn ' + meta.btnCls;
+
+    document.getElementById('loadingMsg').style.display  = 'none';
+    document.getElementById('confirmCard').style.display = 'block';
+  }
+
+  // ============================================================
+  // Confirm → call GAS
+  // ============================================================
+  document.getElementById('btnConfirm').onclick = async function() {
+    showStatus('กำลังดำเนินการ...', 'loading');
+    document.getElementById('btnConfirm').disabled = true;
+    document.getElementById('btnCancel').disabled  = true;
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:      'approve_item',
+          lineUserId:  userId,
+          decision:    decision,
+          id:          recordId,
+          level:       level,
+          type:        type
+        })
+      });
+      const json = await res.json();
+
+      if (json.ok) {
+        const meta = LABELS[decision] || {};
+        showStatus('✅ ' + (meta.text || decision) + ' เรียบร้อย', 'success');
+        setTimeout(function() { liff.closeWindow(); }, 1800);
+      } else {
+        showStatus('❌ ' + (json.message || json.error || 'เกิดข้อผิดพลาด'), 'error');
+        document.getElementById('btnConfirm').disabled = false;
+        document.getElementById('btnCancel').disabled  = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnConfirm').disabled = false;
+      document.getElementById('btnCancel').disabled  = false;
+    }
+  };
+
+  document.getElementById('btnCancel').onclick = function() {
+    liff.closeWindow();
+  };
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function showError(msg) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('confirmCard').style.display = 'none';
+    const box = document.getElementById('errorBox');
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+  }
+
+  function showStatus(t, l) {
+    const el = document.getElementById('status');
+    el.textContent = t;
+    el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>
