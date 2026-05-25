@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>แก้ไขคำขอนอกสถานที่ — Mini HR App</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans Thai', system-ui, sans-serif; background: #F0F8F6; padding: 16px; }
+  .header {
+    background: linear-gradient(135deg, #5A3A7A, #7B5EA7); color: #fff;
+    padding: 20px; border-radius: 16px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 22px; }
+  .header p  { opacity: 0.9; font-size: 13px; margin-top: 4px; }
+
+  /* Read-only summary card */
+  .info-card {
+    background: #EEE8F4; border: 1px solid #B89ED4;
+    padding: 14px; border-radius: 10px; margin-bottom: 10px;
+  }
+  .info-card .kv { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 13px; }
+  .info-card .kv .k { color: #555; }
+  .info-card .kv .v { font-weight: 600; color: #3A2A5A; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .badge.pending_L1 { background: #FFF3CC; color: #7A5A00; }
+  .badge.need_info  { background: #FFE0CC; color: #7A3000; }
+
+  /* Form */
+  .field { background: #fff; padding: 14px; border-radius: 10px; margin-bottom: 10px; }
+  .field label { font-size: 12px; color: #777; display: block; margin-bottom: 6px; }
+  .field input, .field textarea {
+    width: 100%; border: 1px solid #DDD; padding: 10px; border-radius: 6px;
+    font-family: inherit; font-size: 14px;
+  }
+  .row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .type-btn {
+    background: #fff; border: 2px solid #C8E0D8; padding: 12px;
+    border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center;
+  }
+  .type-btn.active { background: #0F6E56; color: #fff; border-color: #0F6E56; }
+
+  .summary {
+    background: #E6F4F0; border: 2px dashed #0F6E56; padding: 14px;
+    border-radius: 10px; margin-bottom: 10px; text-align: center;
+  }
+  .summary .hours { font-size: 32px; font-weight: 900; color: #0F6E56; }
+  .summary .lab   { font-size: 12px; color: #777; }
+
+  .btn-submit {
+    background: #7B5EA7; color: #fff; border: none; padding: 16px;
+    border-radius: 12px; font-size: 17px; font-weight: 700; width: 100%; margin-top: 8px;
+    cursor: pointer;
+  }
+  .btn-submit:disabled { background: #AAA; cursor: default; }
+
+  #loadingMsg { text-align: center; color: #666; padding: 32px; font-size: 15px; }
+  .error-box {
+    background: #FFF0F0; border: 2px solid #B23A3A; padding: 16px; border-radius: 10px;
+    text-align: center; color: #B23A3A; font-weight: 600; margin-bottom: 10px; display: none;
+  }
+  #status { margin-top: 12px; padding: 12px; border-radius: 8px; text-align: center; display: none; }
+  #status.show    { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error   { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>✏️ แก้ไขคำขอนอกสถานที่</h1>
+  <p id="headerSub">กำลังโหลดข้อมูล...</p>
+</div>
+
+<div id="loadingMsg">⏳ กำลังโหลด...</div>
+<div class="error-box" id="errorBox"></div>
+
+<div id="formArea" style="display:none">
+
+  <!-- Read-only context card -->
+  <div class="info-card">
+    <div class="kv"><span class="k">รหัส</span>   <span class="v" id="dispOwId">-</span></div>
+    <div class="kv"><span class="k">Code</span>    <span class="v" id="dispCode">-</span></div>
+    <div class="kv"><span class="k">Case</span>    <span class="v" id="dispCase">-</span></div>
+    <div class="kv"><span class="k">สถานะ</span>  <span class="v" id="dispStatus">-</span></div>
+  </div>
+
+  <!-- Editable fields -->
+  <div class="field">
+    <label>วันที่ปฏิบัติงาน *</label>
+    <input type="date" id="workDate">
+  </div>
+
+  <div class="field">
+    <label>ช่วงเวลา *</label>
+    <div class="row">
+      <input type="time" id="startTime"  placeholder="เวลาออก">
+      <input type="time" id="endTimeEst" placeholder="เวลากลับ (คาด)">
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="lab">รวม (ประมาณ)</div>
+    <div class="hours" id="totalHours">0.0</div>
+    <div class="lab">ชั่วโมง</div>
+  </div>
+
+  <div class="field">
+    <label>สถานที่ปลายทาง *</label>
+    <input type="text" id="destination">
+  </div>
+
+  <div class="field">
+    <label>วัตถุประสงค์ *</label>
+    <textarea id="purpose" rows="3"></textarea>
+  </div>
+
+  <div class="field">
+    <label>พาหนะ *</label>
+    <div class="types">
+      <button class="type-btn" data-transport="own_car">🚗 รถส่วนตัว</button>
+      <button class="type-btn" data-transport="company_car">🚙 รถบริษัท</button>
+      <button class="type-btn" data-transport="taxi">🚕 แท็กซี่</button>
+      <button class="type-btn" data-transport="public">🚌 ขนส่งสาธารณะ</button>
+      <button class="type-btn" data-transport="other" style="grid-column:span 2">อื่นๆ</button>
+    </div>
+  </div>
+
+  <div class="field" id="otherDetailField" style="display:none">
+    <label>รายละเอียดพาหนะ *</label>
+    <textarea id="transportOtherDetail" rows="2"></textarea>
+  </div>
+
+  <div class="field" id="mileageField" style="display:none">
+    <label>ระยะทาง (กิโลเมตร)</label>
+    <input type="number" id="mileageKm" min="0" step="1">
+  </div>
+
+  <button class="btn-submit" id="btnSubmit" disabled>บันทึกการแก้ไข</button>
+
+</div>
+
+<div id="status"></div>
+
+<script>
+  // ============================================================
+  // Mini HR App — Edit Outside Work Request
+  // ============================================================
+  // Security model:
+  //   • Backend verifies LINE userId === record owner before returning data
+  //   • Backend re-verifies ownership + status before writing
+  //   • Editable only when status = pending_L1 | need_info
+  //   • Every save appends an immutable edit_history entry
+  // ============================================================
+
+  // TODO: After creating a new LIFF app in LINE Developer Console,
+  //       replace this placeholder with the real LIFF ID.
+  //       Endpoint URL to register: https://<your-github-pages>/edit-outside-work.html
+  const LIFF_ID = 'REPLACE_WITH_EDIT_OW_LIFF_ID';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+
+  let userId        = null;
+  let owId          = null;
+  let transportType = null;
+
+  // ============================================================
+  // Init — extract owId, authenticate, load data
+  // ============================================================
+  (async function init() {
+    owId = new URLSearchParams(window.location.search).get('owId');
+    if (!owId) {
+      showError('ไม่พบรหัสคำขอ กรุณาเข้าผ่านลิงก์ที่ถูกต้อง');
+      return;
+    }
+
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) liff.login();
+      const profile = await liff.getProfile();
+      userId = profile.userId;
+    } catch (err) {
+      showError('LIFF init failed: ' + err.message);
+      return;
+    }
+
+    await loadOWData();
+  })();
+
+  // ============================================================
+  // Load existing request from backend
+  // ============================================================
+  async function loadOWData() {
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:      'get_outside_work_for_edit',
+          lineUserId:  userId,
+          owId:        owId
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        showError(json.message || json.error || 'ไม่สามารถโหลดข้อมูลได้');
+        return;
+      }
+      populateForm(json.ow);
+    } catch (err) {
+      showError('โหลดข้อมูลล้มเหลว: ' + err.message);
+    }
+  }
+
+  // ============================================================
+  // Populate form with existing values
+  // ============================================================
+  function populateForm(ow) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('formArea').style.display   = 'block';
+    document.getElementById('headerSub').textContent    = ow.ow_id;
+
+    // Read-only info
+    document.getElementById('dispOwId').textContent = ow.ow_id;
+    document.getElementById('dispCode').textContent = ow.customer_code || '-';
+    document.getElementById('dispCase').textContent = ow.customer_case || '-';
+
+    const statusLabel = { pending_L1: 'รออนุมัติ L1', need_info: 'ขอข้อมูลเพิ่ม' };
+    document.getElementById('dispStatus').innerHTML =
+      '<span class="badge ' + ow.status + '">' + (statusLabel[ow.status] || ow.status) + '</span>';
+
+    // Editable fields
+    document.getElementById('workDate').value    = ow.work_date  || '';
+    document.getElementById('startTime').value   = (ow.start_time  || '').substring(0, 5);
+    document.getElementById('endTimeEst').value  = (ow.end_time    || '').substring(0, 5);
+    document.getElementById('destination').value = ow.destination || '';
+    document.getElementById('purpose').value     = ow.purpose    || '';
+
+    // Restore transport type selection
+    transportType = ow.transport_type || null;
+    if (transportType) {
+      const btn = document.querySelector('.type-btn[data-transport="' + transportType + '"]');
+      if (btn) btn.classList.add('active');
+
+      const needsMileage = transportType === 'own_car' || transportType === 'company_car';
+      document.getElementById('mileageField').style.display = needsMileage ? 'block' : 'none';
+      if (needsMileage && ow.mileage_km) {
+        document.getElementById('mileageKm').value = ow.mileage_km;
+      }
+
+      const needsDetail = transportType === 'other';
+      document.getElementById('otherDetailField').style.display = needsDetail ? 'block' : 'none';
+      if (needsDetail && ow.transport_other_detail) {
+        document.getElementById('transportOtherDetail').value = ow.transport_other_detail;
+      }
+    }
+
+    recalc();
+  }
+
+  // ============================================================
+  // Transport toggle
+  // ============================================================
+  document.querySelectorAll('.type-btn[data-transport]').forEach(function(b) {
+    b.onclick = function() {
+      document.querySelectorAll('.type-btn[data-transport]').forEach(function(x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      transportType = b.dataset.transport;
+
+      const needsMileage = transportType === 'own_car' || transportType === 'company_car';
+      document.getElementById('mileageField').style.display = needsMileage ? 'block' : 'none';
+      if (!needsMileage) document.getElementById('mileageKm').value = '';
+
+      const needsDetail = transportType === 'other';
+      document.getElementById('otherDetailField').style.display = needsDetail ? 'block' : 'none';
+      if (!needsDetail) document.getElementById('transportOtherDetail').value = '';
+
+      checkCan();
+    };
+  });
+
+  // ============================================================
+  // Hours calculator
+  // ============================================================
+  function recalc() {
+    const s = document.getElementById('startTime').value;
+    const e = document.getElementById('endTimeEst').value;
+    if (!s || !e) { document.getElementById('totalHours').textContent = '0.0'; checkCan(); return; }
+    const [sh, sm] = s.split(':').map(Number);
+    const [eh, em] = e.split(':').map(Number);
+    const diff = (eh * 60 + em) - (sh * 60 + sm);
+    document.getElementById('totalHours').textContent = Math.max(0, diff / 60).toFixed(1);
+    checkCan();
+  }
+
+  function checkCan() {
+    const otherOk = transportType !== 'other'
+      || document.getElementById('transportOtherDetail').value.trim();
+    const ok = document.getElementById('workDate').value
+      && document.getElementById('startTime').value
+      && document.getElementById('endTimeEst').value
+      && parseFloat(document.getElementById('totalHours').textContent) > 0
+      && document.getElementById('destination').value.trim()
+      && document.getElementById('purpose').value.trim()
+      && transportType
+      && otherOk;
+    document.getElementById('btnSubmit').disabled = !ok;
+  }
+
+  document.querySelectorAll('input, textarea').forEach(function(el) {
+    el.oninput = recalc;
+  });
+
+  // ============================================================
+  // Submit edit
+  // ============================================================
+  document.getElementById('btnSubmit').onclick = async function() {
+    showStatus('กำลังบันทึก...', 'loading');
+    document.getElementById('btnSubmit').disabled = true;
+
+    const payload = {
+      action:      'update_outside_work',
+      lineUserId:  userId,
+      owId:        owId,
+      workDate:    document.getElementById('workDate').value,
+      startTime:   document.getElementById('startTime').value,
+      endTimeEst:  document.getElementById('endTimeEst').value,
+      destination: document.getElementById('destination').value.trim(),
+      purpose:     document.getElementById('purpose').value.trim(),
+      transportType: transportType,
+      transportOtherDetail: transportType === 'other'
+        ? document.getElementById('transportOtherDetail').value.trim() : null,
+      mileageKm: document.getElementById('mileageKm').value || null
+    };
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body:    JSON.stringify(payload)
+      });
+      const json = await res.json();
+
+      if (json.ok) {
+        showStatus('✅ บันทึกการแก้ไขเรียบร้อย (' + json.owId + ')', 'success');
+        setTimeout(function() { liff.closeWindow(); }, 2500);
+      } else {
+        showStatus('❌ ' + (json.message || json.error), 'error');
+        document.getElementById('btnSubmit').disabled = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnSubmit').disabled = false;
+    }
+  };
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function showError(msg) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    const box = document.getElementById('errorBox');
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+    document.getElementById('headerSub').textContent = 'ไม่สามารถโหลดได้';
+  }
+
+  function showStatus(t, l) {
+    const el = document.getElementById('status');
+    el.textContent = t;
+    el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>
