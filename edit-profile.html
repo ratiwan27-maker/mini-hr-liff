@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>แก้ไขโปรไฟล์ — Mini HR App</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans Thai', system-ui, sans-serif;
+    background: #F5F5F5; padding: 16px;
+    min-height: 100vh;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #0F6E56, #1A9B78);
+    color: #fff; padding: 20px 16px; border-radius: 16px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 20px; font-weight: 800; }
+  .header p  { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+
+  .emp-badge {
+    background: #fff; border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #555; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .emp-badge strong { color: #0F6E56; }
+
+  /* pending banner */
+  .pending-banner {
+    background: #FFF8E0; border: 2px solid #F2A640;
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;
+    font-size: 14px; color: #7A5000; display: none;
+  }
+  .pending-banner.show { display: block; }
+  .pending-banner strong { display: block; margin-bottom: 4px; }
+
+  /* field card */
+  .field-card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .field-card label {
+    font-size: 12px; color: #888; display: block; margin-bottom: 5px;
+  }
+  .field-card input {
+    width: 100%; border: 1.5px solid #DDD; padding: 10px 12px;
+    border-radius: 8px; font-size: 15px; font-family: inherit;
+    transition: border-color .2s;
+  }
+  .field-card input:focus { border-color: #0F6E56; outline: none; }
+  .field-card .current {
+    font-size: 11px; color: #AAA; margin-top: 4px;
+  }
+  .field-card.changed input { border-color: #0F6E56; background: #F0FBF7; }
+
+  /* reason */
+  .reason-card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .reason-card label { font-size: 12px; color: #888; display: block; margin-bottom: 5px; }
+  .reason-card textarea {
+    width: 100%; border: 1.5px solid #DDD; padding: 10px 12px;
+    border-radius: 8px; font-size: 14px; font-family: inherit;
+    resize: vertical; min-height: 72px; transition: border-color .2s;
+  }
+  .reason-card textarea:focus { border-color: #0F6E56; outline: none; }
+
+  /* buttons */
+  .btn-submit {
+    width: 100%; padding: 16px; border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+    background: #0F6E56; color: #fff; margin-bottom: 8px;
+  }
+  .btn-submit:disabled { background: #CCC; color: #888; cursor: default; }
+  .btn-cancel {
+    width: 100%; padding: 14px; border: none; border-radius: 12px;
+    font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+    background: #EEE; color: #555;
+  }
+
+  /* status */
+  #status {
+    margin-top: 14px; padding: 14px; border-radius: 10px;
+    font-size: 14px; text-align: center; display: none;
+  }
+  #status.show    { display: block; }
+  #status.success { background: #1F7A1F; color: #fff; }
+  #status.error   { background: #B23A3A; color: #fff; }
+  #status.loading { background: #F2A640; color: #fff; }
+
+  /* loading / error */
+  #loadingMsg { color: #777; margin-top: 40px; text-align: center; }
+  .error-box {
+    background: #FFF0F0; border: 2px solid #B23A3A;
+    border-radius: 10px; padding: 16px; color: #B23A3A;
+    font-weight: 600; text-align: center; display: none; margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingMsg">⏳ กำลังโหลด...</div>
+<div class="error-box" id="errorBox"></div>
+
+<div id="mainContent" style="display:none">
+  <div class="header">
+    <h1>✏️ แก้ไขโปรไฟล์</h1>
+    <p>ยื่นคำขอแก้ไขข้อมูลส่วนตัว — Admin จะพิจารณาก่อนอัปเดต</p>
+  </div>
+
+  <div class="emp-badge">
+    👤 รหัสพนักงาน: <strong id="empIdDisplay">-</strong>
+  </div>
+
+  <div class="pending-banner" id="pendingBanner">
+    <strong>⏳ มีคำขอรอพิจารณาอยู่แล้ว</strong>
+    คำขอ <span id="pendingId"></span> กำลังรอ Admin พิจารณา
+    กรุณารอผลก่อนส่งคำขอใหม่
+  </div>
+
+  <!-- Editable fields -->
+  <div class="field-card" id="fc_display_name">
+    <label>ชื่อแสดง *</label>
+    <input type="text" id="f_display_name" autocomplete="name">
+    <div class="current" id="cur_display_name"></div>
+  </div>
+
+  <div class="field-card" id="fc_phone">
+    <label>เบอร์โทร *</label>
+    <input type="tel" id="f_phone" autocomplete="tel">
+    <div class="current" id="cur_phone"></div>
+  </div>
+
+  <div class="field-card" id="fc_email">
+    <label>อีเมล</label>
+    <input type="email" id="f_email" autocomplete="email">
+    <div class="current" id="cur_email"></div>
+  </div>
+
+  <div class="field-card" id="fc_department">
+    <label>แผนก</label>
+    <input type="text" id="f_department">
+    <div class="current" id="cur_department"></div>
+  </div>
+
+  <div class="field-card" id="fc_position">
+    <label>ตำแหน่ง</label>
+    <input type="text" id="f_position">
+    <div class="current" id="cur_position"></div>
+  </div>
+
+  <div class="field-card" id="fc_bank_name">
+    <label>ธนาคาร</label>
+    <input type="text" id="f_bank_name">
+    <div class="current" id="cur_bank_name"></div>
+  </div>
+
+  <div class="field-card" id="fc_bank_account_no">
+    <label>เลขบัญชี</label>
+    <input type="text" id="f_bank_account_no" autocomplete="off">
+    <div class="current" id="cur_bank_account_no"></div>
+  </div>
+
+  <div class="field-card" id="fc_bank_account_name">
+    <label>ชื่อบัญชี</label>
+    <input type="text" id="f_bank_account_name">
+    <div class="current" id="cur_bank_account_name"></div>
+  </div>
+
+  <div class="reason-card">
+    <label>เหตุผลในการแก้ไข *</label>
+    <textarea id="f_reason" placeholder="เช่น เปลี่ยนเบอร์โทร / อัปเดตข้อมูลบัญชีธนาคาร"></textarea>
+  </div>
+
+  <button class="btn-submit" id="btnSubmit" disabled>ส่งคำขอแก้ไข</button>
+  <button class="btn-cancel" id="btnCancel">ยกเลิก</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  // ============================================================
+  // Mini HR App — Edit Profile LIFF page
+  // ============================================================
+  // TODO: create a new LIFF app in LINE Developer Console,
+  //       endpoint = https://<github-pages>/edit-profile.html,
+  //       then replace the placeholder below.
+  const LIFF_ID = '2010169392-2Uyor02K';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz06pwj-EGXBzu6XfqQI1qq6TxnmxYR2a1R3xn5ZdGqnEuqo8UF_8gobmGdj9pqPX3l/exec';
+
+  const FIELDS = [
+    'display_name', 'phone', 'email', 'department', 'position',
+    'bank_name', 'bank_account_no', 'bank_account_name'
+  ];
+
+  let userId = null;
+  let originalProfile = {};
+  let hasPending = false;
+
+  // ──────────────────────────────────────────────────────────
+  // Init
+  // ──────────────────────────────────────────────────────────
+  (async function init() {
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) liff.login();
+      const profile = await liff.getProfile();
+      userId = profile.userId;
+    } catch (err) {
+      showError('LIFF init failed: ' + err.message);
+      return;
+    }
+    await loadProfile();
+  })();
+
+  // ──────────────────────────────────────────────────────────
+  // Load current profile from GAS
+  // ──────────────────────────────────────────────────────────
+  async function loadProfile() {
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'get_my_profile', lineUserId: userId })
+      });
+      const json = await res.json();
+
+      if (!json.ok) {
+        showError('โหลดข้อมูลไม่สำเร็จ: ' + (json.error || json.message || 'unknown'));
+        return;
+      }
+
+      originalProfile = json.profile;
+      hasPending = json.hasPending;
+
+      populateForm(json.profile);
+
+      if (hasPending) {
+        document.getElementById('pendingId').textContent = json.pendingRequestId || '';
+        document.getElementById('pendingBanner').classList.add('show');
+        disableForm();
+      } else {
+        setupChangeDetection();
+      }
+
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+
+    } catch (err) {
+      showError('เชื่อมต่อไม่สำเร็จ: ' + err.message);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Populate form fields
+  // ──────────────────────────────────────────────────────────
+  function populateForm(profile) {
+    document.getElementById('empIdDisplay').textContent = profile.employee_id || '-';
+
+    FIELDS.forEach(function(f) {
+      var input = document.getElementById('f_' + f);
+      var curEl = document.getElementById('cur_' + f);
+      if (input) input.value = profile[f] || '';
+      if (curEl) curEl.textContent = profile[f] ? 'ปัจจุบัน: ' + profile[f] : '';
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Highlight changed fields + enable submit when at least one changes
+  // ──────────────────────────────────────────────────────────
+  function setupChangeDetection() {
+    FIELDS.forEach(function(f) {
+      var input = document.getElementById('f_' + f);
+      if (!input) return;
+      input.addEventListener('input', function() {
+        var card = document.getElementById('fc_' + f);
+        var changed = input.value.trim() !== (originalProfile[f] || '');
+        if (card) card.classList.toggle('changed', changed);
+        checkSubmitEnabled();
+      });
+    });
+
+    document.getElementById('f_reason').addEventListener('input', checkSubmitEnabled);
+  }
+
+  function checkSubmitEnabled() {
+    var anyChanged = FIELDS.some(function(f) {
+      var input = document.getElementById('f_' + f);
+      return input && input.value.trim() !== (originalProfile[f] || '');
+    });
+    var hasReason = document.getElementById('f_reason').value.trim().length > 0;
+    document.getElementById('btnSubmit').disabled = !(anyChanged && hasReason);
+  }
+
+  function disableForm() {
+    FIELDS.forEach(function(f) {
+      var input = document.getElementById('f_' + f);
+      if (input) input.disabled = true;
+    });
+    document.getElementById('f_reason').disabled = true;
+    document.getElementById('btnSubmit').disabled = true;
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Submit
+  // ──────────────────────────────────────────────────────────
+  document.getElementById('btnSubmit').onclick = async function() {
+    var reason = document.getElementById('f_reason').value.trim();
+    if (!reason) { showStatus('กรุณาระบุเหตุผล', 'error'); return; }
+
+    // Collect new values (only changed fields)
+    var newValues = {};
+    FIELDS.forEach(function(f) {
+      var input = document.getElementById('f_' + f);
+      if (input) {
+        var val = input.value.trim();
+        if (val !== (originalProfile[f] || '')) newValues[f] = val;
+      }
+    });
+
+    if (Object.keys(newValues).length === 0) {
+      showStatus('ไม่มีข้อมูลที่เปลี่ยนแปลง', 'error');
+      return;
+    }
+
+    showStatus('กำลังส่งคำขอ...', 'loading');
+    document.getElementById('btnSubmit').disabled = true;
+    document.getElementById('btnCancel').disabled = true;
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:     'request_profile_change',
+          lineUserId: userId,
+          newValues:  newValues,
+          reason:     reason
+        })
+      });
+      const json = await res.json();
+
+      if (json.ok) {
+        showStatus('✅ ส่งคำขอเรียบร้อย (' + json.requestId + ')\nรอ Admin พิจารณา', 'success');
+        setTimeout(function() { liff.closeWindow(); }, 2500);
+      } else {
+        showStatus('❌ ' + (json.message || json.error || 'เกิดข้อผิดพลาด'), 'error');
+        document.getElementById('btnSubmit').disabled = false;
+        document.getElementById('btnCancel').disabled = false;
+      }
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'error');
+      document.getElementById('btnSubmit').disabled = false;
+      document.getElementById('btnCancel').disabled = false;
+    }
+  };
+
+  document.getElementById('btnCancel').onclick = function() {
+    liff.closeWindow();
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────
+  function showError(msg) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'none';
+    var box = document.getElementById('errorBox');
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+  }
+
+  function showStatus(t, l) {
+    var el = document.getElementById('status');
+    el.textContent = t; el.className = 'show ' + l;
+  }
+</script>
+</body>
+</html>
